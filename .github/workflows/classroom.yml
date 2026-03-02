@@ -20,37 +20,43 @@ jobs:
             exit 1
           fi
 
-      - name: Read URL
-        id: read_url
+      - name: Read URL into env
         run: |
-          URL=$(cat submission.txt | tr -d '\n')
-          echo "URL=$URL" >> $GITHUB_ENV
+          # remove CRLF and trim spaces
+          URL="$(cat submission.txt | tr -d '\r\n' | xargs)"
+          echo "URL=$URL" >> "$GITHUB_ENV"
           echo "Submitted URL: $URL"
 
       - name: Validate URL format
         run: |
+          if [[ -z "$URL" ]]; then
+            echo "Empty URL in submission.txt"
+            exit 1
+          fi
           if [[ ! "$URL" =~ ^https?:// ]]; then
-            echo "Invalid URL format"
+            echo "Invalid URL format (must start with http:// or https://)"
             exit 1
           fi
 
-      - name: Curl and content check
+      - name: Curl and content check (CSC309 on homepage)
         run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" "$URL")
-          echo "HTTP Status: $STATUS"
+          set -e
 
+          # Fetch once: save body, capture status
+          STATUS=$(curl -L --fail -sS --max-time 15 \
+            -o body.html -w "%{http_code}" "$URL")
+
+          echo "HTTP Status: $STATUS"
           if [ "$STATUS" -ne 200 ]; then
-            echo "Deployment not reachable (status $STATUS)"
+            echo "Expected 200 OK, got $STATUS"
             exit 1
           fi
 
-          echo "Checking page content..."
-          BODY=$(curl -s --max-time 10 "$URL" | head -n 2000)
-
-          if [[ "$BODY" != *"CSC309"* ]]; then
-            echo "Expected content not found"
+          echo "Checking page content for CSC309..."
+          if ! head -n 2000 body.html | grep -q "CSC309"; then
+            echo "Expected content 'CSC309' not found on homepage."
             exit 1
           fi
 
       - name: Success
-        run: echo "Deployment reachable. Test passed."
+        run: echo "Deployment reachable and contains CSC309. Test passed."
